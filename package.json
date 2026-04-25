@@ -19,7 +19,7 @@
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.4",
     "electron": "^28.2.0",
-    "electron-builder": "^24.9.1",
+    "electron-builder": "^25.1.8",
     "prettier": "^3.8.3",
     "vite": "^5.1.5",
     "vite-plugin-electron": "^0.28.4",
@@ -42,7 +42,13 @@
       "output": "release"
     },
     "mac": {
-      "category": "public.app-category.music"
+      "category": "public.app-category.music",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ]
     },
     "win": {
       "target": "nsis"
