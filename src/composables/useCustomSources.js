@@ -80,6 +80,28 @@ async function removeSource(id) {
   setMessage('ok', `已删除：${id}`);
 }
 
+async function reloadSource(entry) {
+  if (!window.musicAPI?.customSourceReload) return;
+  const id = entry?.id;
+  if (!id) return;
+  busy.value = true;
+  setMessage('', `正在重新加载：${id}…`);
+  try {
+    const r = await window.musicAPI.customSourceReload(id);
+    if (r?.ok) {
+      const where = r.source === 'url' ? '远程地址' : r.source === 'file' ? '本地文件' : '本地缓存';
+      setMessage('ok', `已从${where}重新加载：${r.entry?.name || id}`);
+      await refresh();
+    } else {
+      setMessage('err', '重新加载失败：' + (r?.error || '未知错误'));
+    }
+  } catch (e) {
+    setMessage('err', '重新加载失败：' + e.message);
+  } finally {
+    busy.value = false;
+  }
+}
+
 async function toggleEnabled(entry) {
   await window.musicAPI.customSourceSetEnabled(entry.id, !entry.enabled);
   await refresh();
@@ -101,6 +123,7 @@ export function useCustomSources() {
     importFromFile,
     importFromUrl,
     removeSource,
+    reloadSource,
     toggleEnabled,
     refresh,
     formatSourceKeys

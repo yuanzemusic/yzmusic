@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('musicAPI', {
   customSourceImportFile: () => ipcRenderer.invoke('customSource:importFile'),
   customSourceImportUrl: (url) => ipcRenderer.invoke('customSource:importUrl', url),
   customSourceRemove: (id) => ipcRenderer.invoke('customSource:remove', id),
+  customSourceReload: (id) => ipcRenderer.invoke('customSource:reload', id),
   customSourceSetEnabled: (id, enabled) => ipcRenderer.invoke('customSource:setEnabled', id, enabled),
   customSourceResolveMusicUrl: (payload) => ipcRenderer.invoke('customSource:resolveMusicUrl', payload),
   customSourceDispatch: (payload) => ipcRenderer.invoke('customSource:dispatch', payload),

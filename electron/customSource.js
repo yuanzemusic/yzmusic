@@ -498,6 +498,63 @@ class CustomSourceManager {
     return this.install(script, filePath);
   }
 
+  // 根据已安装条目的 origin，从远端 URL 或本地磁盘重新拉取脚本并替换。
+  // - origin 为 http(s) URL：重新下载
+  // - origin 为本地存在的文件路径：重新读取
+  // - 其他（'local' 或源已不可达）：用持久化的 script 重启沙箱
+  // 返回 { entry, source: 'url'|'file'|'cache' }
+  async reload(id) {
+    const list = this._readAll();
+    const existing = list.find((e) => e.id === id);
+    if (!existing) throw new Error('未找到自定义源：' + id);
+
+    const origin = existing.origin || 'local';
+    const isUrl = /^https?:\/\//i.test(origin);
+    let script;
+    let sourceKind;
+    if (isUrl) {
+      const res = await httpRequest(origin, { method: 'GET', timeout: 30000 });
+      if (res.statusCode !== 200) throw new Error('HTTP ' + res.statusCode);
+      script = res.body.toString('utf-8');
+      sourceKind = 'url';
+    } else if (origin && origin !== 'local' && fs.existsSync(origin)) {
+      script = await fsp.readFile(origin, 'utf-8');
+      sourceKind = 'file';
+    } else {
+      if (!existing.script) throw new Error('无可用的重新加载来源');
+      script = existing.script;
+      sourceKind = 'cache';
+    }
+
+    const info = parseScriptInfo(script);
+    if (!info.name) throw new Error('脚本缺少 @name 元信息');
+
+    const loaded = new LoadedSource(script);
+    await loaded.load();
+
+    // 替换现有条目，保留 enabled / installedAt / origin / id；用 info.name 作为新 name 但保持原 id 不变
+    const updated = {
+      ...existing,
+      name: info.name || existing.name,
+      description: info.description,
+      version: info.version,
+      author: info.author,
+      homepage: info.homepage,
+      sources: loaded.sources,
+      script,
+      reloadedAt: Date.now()
+    };
+
+    const next = list.map((e) => (e.id === id ? updated : e));
+    this._writeAll(next);
+
+    // 替换运行时缓存
+    this.runtime.set(id, loaded);
+
+    const { script: _drop, ...safe } = updated;
+    return { entry: safe, source: sourceKind };
+  }
+
   remove(id) {
     const list = this._readAll().filter((e) => e.id !== id);
     this._writeAll(list);
