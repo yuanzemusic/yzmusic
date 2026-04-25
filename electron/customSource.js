@@ -235,6 +235,199 @@ function makeLxRequest(scriptName, recorder) {
   };
 }
 
+// ---------- 纯 JS 3DES-ECB (LDDC / QQMusic QRC 变体) ----------
+// 不是 NIST 标准 DES：QQMusic 的 QRC 用了一套定制 S-box 以及把每个
+// 32-bit 字内字节顺序反过来的 bit 编址（参考 LDDC、SPlayer、ikun-music
+// 的实现）。OpenSSL 的 'des-ede3-ecb' 对它无效；标准 3DES 也对不上号。
+//
+// 这里直接 1:1 移植 LDDC 的 tripledes（TS 版来自 SPlayer 的 qqmusic 模块）：
+//   - sbox 表略偏离 FIPS 46-3（位置 [1][23] / [3][52] 等），照搬即可
+//   - bitnum 用 (b/32)*4 + 3 - (b%32)/8 的字节索引取值，等价于把每个
+//     8 字节块按两组 4 字节小端拼接后再做位提取
+//   - 三轮 EDE：解密时顺序 D_K3 → E_K2 → D_K1
+// 加上 NIST 标准的 DES 兜底（命名 standardDesEcbDecrypt 已让 OpenSSL 处理），
+// 这里只暴露 QRC 版本作为 desDecrypt 的 fallback 入口。
+const tripleDesEcbDecrypt = (() => {
+  const ENCRYPT = 1;
+  const DECRYPT = 0;
+
+  // S-box 表（LDDC 自带的 QQMusic 定制版本，注意与 FIPS 标准略异）
+  const sbox = [
+    [14, 4, 13, 1, 2, 15, 11, 8, 3, 10, 6, 12, 5, 9, 0, 7, 0, 15, 7, 4, 14, 2, 13, 1, 10, 6, 12, 11, 9, 5, 3, 8, 4, 1, 14, 8, 13, 6, 2, 11, 15, 12, 9, 7, 3, 10, 5, 0, 15, 12, 8, 2, 4, 9, 1, 7, 5, 11, 3, 14, 10, 0, 6, 13],
+    [15, 1, 8, 14, 6, 11, 3, 4, 9, 7, 2, 13, 12, 0, 5, 10, 3, 13, 4, 7, 15, 2, 8, 15, 12, 0, 1, 10, 6, 9, 11, 5, 0, 14, 7, 11, 10, 4, 13, 1, 5, 8, 12, 6, 9, 3, 2, 15, 13, 8, 10, 1, 3, 15, 4, 2, 11, 6, 7, 12, 0, 5, 14, 9],
+    [10, 0, 9, 14, 6, 3, 15, 5, 1, 13, 12, 7, 11, 4, 2, 8, 13, 7, 0, 9, 3, 4, 6, 10, 2, 8, 5, 14, 12, 11, 15, 1, 13, 6, 4, 9, 8, 15, 3, 0, 11, 1, 2, 12, 5, 10, 14, 7, 1, 10, 13, 0, 6, 9, 8, 7, 4, 15, 14, 3, 11, 5, 2, 12],
+    [7, 13, 14, 3, 0, 6, 9, 10, 1, 2, 8, 5, 11, 12, 4, 15, 13, 8, 11, 5, 6, 15, 0, 3, 4, 7, 2, 12, 1, 10, 14, 9, 10, 6, 9, 0, 12, 11, 7, 13, 15, 1, 3, 14, 5, 2, 8, 4, 3, 15, 0, 6, 10, 10, 13, 8, 9, 4, 5, 11, 12, 7, 2, 14],
+    [2, 12, 4, 1, 7, 10, 11, 6, 8, 5, 3, 15, 13, 0, 14, 9, 14, 11, 2, 12, 4, 7, 13, 1, 5, 0, 15, 10, 3, 9, 8, 6, 4, 2, 1, 11, 10, 13, 7, 8, 15, 9, 12, 5, 6, 3, 0, 14, 11, 8, 12, 7, 1, 14, 2, 13, 6, 15, 0, 9, 10, 4, 5, 3],
+    [12, 1, 10, 15, 9, 2, 6, 8, 0, 13, 3, 4, 14, 7, 5, 11, 10, 15, 4, 2, 7, 12, 9, 5, 6, 1, 13, 14, 0, 11, 3, 8, 9, 14, 15, 5, 2, 8, 12, 3, 7, 0, 4, 10, 1, 13, 11, 6, 4, 3, 2, 12, 9, 5, 15, 10, 11, 14, 1, 7, 6, 0, 8, 13],
+    [4, 11, 2, 14, 15, 0, 8, 13, 3, 12, 9, 7, 5, 10, 6, 1, 13, 0, 11, 7, 4, 9, 1, 10, 14, 3, 5, 12, 2, 15, 8, 6, 1, 4, 11, 13, 12, 3, 7, 14, 10, 15, 6, 8, 0, 5, 9, 2, 6, 11, 13, 8, 1, 4, 10, 7, 9, 5, 0, 15, 14, 2, 3, 12],
+    [13, 2, 8, 4, 6, 15, 11, 1, 10, 9, 3, 14, 5, 0, 12, 7, 1, 15, 13, 8, 10, 3, 7, 4, 12, 5, 6, 11, 0, 14, 9, 2, 7, 11, 4, 1, 9, 12, 14, 2, 0, 6, 10, 13, 15, 3, 5, 8, 2, 1, 14, 7, 4, 10, 8, 13, 15, 12, 9, 0, 3, 5, 6, 11]
+  ];
+
+  function bitnum(a, b, c) {
+    const byteIndex = Math.floor(b / 32) * 4 + 3 - Math.floor((b % 32) / 8);
+    return ((a[byteIndex] >> (7 - (b % 8))) & 1) << c;
+  }
+  function bitnumIntr(a, b, c) {
+    return ((a >>> (31 - b)) & 1) << c;
+  }
+  function bitnumIntl(a, b, c) {
+    return (((a << b) & 0x80000000) >>> c) >>> 0;
+  }
+  function sboxBit(a) {
+    return (a & 32) | ((a & 31) >> 1) | ((a & 1) << 4);
+  }
+
+  function initialPermutation(inputData) {
+    const s0 = (
+      bitnum(inputData, 57, 31) | bitnum(inputData, 49, 30) | bitnum(inputData, 41, 29) | bitnum(inputData, 33, 28) |
+      bitnum(inputData, 25, 27) | bitnum(inputData, 17, 26) | bitnum(inputData,  9, 25) | bitnum(inputData,  1, 24) |
+      bitnum(inputData, 59, 23) | bitnum(inputData, 51, 22) | bitnum(inputData, 43, 21) | bitnum(inputData, 35, 20) |
+      bitnum(inputData, 27, 19) | bitnum(inputData, 19, 18) | bitnum(inputData, 11, 17) | bitnum(inputData,  3, 16) |
+      bitnum(inputData, 61, 15) | bitnum(inputData, 53, 14) | bitnum(inputData, 45, 13) | bitnum(inputData, 37, 12) |
+      bitnum(inputData, 29, 11) | bitnum(inputData, 21, 10) | bitnum(inputData, 13,  9) | bitnum(inputData,  5,  8) |
+      bitnum(inputData, 63,  7) | bitnum(inputData, 55,  6) | bitnum(inputData, 47,  5) | bitnum(inputData, 39,  4) |
+      bitnum(inputData, 31,  3) | bitnum(inputData, 23,  2) | bitnum(inputData, 15,  1) | bitnum(inputData,  7,  0)
+    ) >>> 0;
+    const s1 = (
+      bitnum(inputData, 56, 31) | bitnum(inputData, 48, 30) | bitnum(inputData, 40, 29) | bitnum(inputData, 32, 28) |
+      bitnum(inputData, 24, 27) | bitnum(inputData, 16, 26) | bitnum(inputData,  8, 25) | bitnum(inputData,  0, 24) |
+      bitnum(inputData, 58, 23) | bitnum(inputData, 50, 22) | bitnum(inputData, 42, 21) | bitnum(inputData, 34, 20) |
+      bitnum(inputData, 26, 19) | bitnum(inputData, 18, 18) | bitnum(inputData, 10, 17) | bitnum(inputData,  2, 16) |
+      bitnum(inputData, 60, 15) | bitnum(inputData, 52, 14) | bitnum(inputData, 44, 13) | bitnum(inputData, 36, 12) |
+      bitnum(inputData, 28, 11) | bitnum(inputData, 20, 10) | bitnum(inputData, 12,  9) | bitnum(inputData,  4,  8) |
+      bitnum(inputData, 62,  7) | bitnum(inputData, 54,  6) | bitnum(inputData, 46,  5) | bitnum(inputData, 38,  4) |
+      bitnum(inputData, 30,  3) | bitnum(inputData, 22,  2) | bitnum(inputData, 14,  1) | bitnum(inputData,  6,  0)
+    ) >>> 0;
+    return [s0, s1];
+  }
+
+  function inversePermutation(s0, s1) {
+    const data = new Uint8Array(8);
+    data[3] = bitnumIntr(s1,7,7)|bitnumIntr(s0,7,6)|bitnumIntr(s1,15,5)|bitnumIntr(s0,15,4)|bitnumIntr(s1,23,3)|bitnumIntr(s0,23,2)|bitnumIntr(s1,31,1)|bitnumIntr(s0,31,0);
+    data[2] = bitnumIntr(s1,6,7)|bitnumIntr(s0,6,6)|bitnumIntr(s1,14,5)|bitnumIntr(s0,14,4)|bitnumIntr(s1,22,3)|bitnumIntr(s0,22,2)|bitnumIntr(s1,30,1)|bitnumIntr(s0,30,0);
+    data[1] = bitnumIntr(s1,5,7)|bitnumIntr(s0,5,6)|bitnumIntr(s1,13,5)|bitnumIntr(s0,13,4)|bitnumIntr(s1,21,3)|bitnumIntr(s0,21,2)|bitnumIntr(s1,29,1)|bitnumIntr(s0,29,0);
+    data[0] = bitnumIntr(s1,4,7)|bitnumIntr(s0,4,6)|bitnumIntr(s1,12,5)|bitnumIntr(s0,12,4)|bitnumIntr(s1,20,3)|bitnumIntr(s0,20,2)|bitnumIntr(s1,28,1)|bitnumIntr(s0,28,0);
+    data[7] = bitnumIntr(s1,3,7)|bitnumIntr(s0,3,6)|bitnumIntr(s1,11,5)|bitnumIntr(s0,11,4)|bitnumIntr(s1,19,3)|bitnumIntr(s0,19,2)|bitnumIntr(s1,27,1)|bitnumIntr(s0,27,0);
+    data[6] = bitnumIntr(s1,2,7)|bitnumIntr(s0,2,6)|bitnumIntr(s1,10,5)|bitnumIntr(s0,10,4)|bitnumIntr(s1,18,3)|bitnumIntr(s0,18,2)|bitnumIntr(s1,26,1)|bitnumIntr(s0,26,0);
+    data[5] = bitnumIntr(s1,1,7)|bitnumIntr(s0,1,6)|bitnumIntr(s1, 9,5)|bitnumIntr(s0, 9,4)|bitnumIntr(s1,17,3)|bitnumIntr(s0,17,2)|bitnumIntr(s1,25,1)|bitnumIntr(s0,25,0);
+    data[4] = bitnumIntr(s1,0,7)|bitnumIntr(s0,0,6)|bitnumIntr(s1, 8,5)|bitnumIntr(s0, 8,4)|bitnumIntr(s1,16,3)|bitnumIntr(s0,16,2)|bitnumIntr(s1,24,1)|bitnumIntr(s0,24,0);
+    return data;
+  }
+
+  function f(state, key) {
+    const t1 = (
+      bitnumIntl(state,31,0) | ((state & 0xf0000000) >>> 1) | bitnumIntl(state,4,5) | bitnumIntl(state,3,6) |
+      ((state & 0x0f000000) >>> 3) | bitnumIntl(state,8,11) | bitnumIntl(state,7,12) |
+      ((state & 0x00f00000) >>> 5) | bitnumIntl(state,12,17) | bitnumIntl(state,11,18) |
+      ((state & 0x000f0000) >>> 7) | bitnumIntl(state,16,23)
+    ) >>> 0;
+    const t2 = (
+      bitnumIntl(state,15,0) | ((state & 0x0000f000) << 15) | bitnumIntl(state,20,5) | bitnumIntl(state,19,6) |
+      ((state & 0x00000f00) << 13) | bitnumIntl(state,24,11) | bitnumIntl(state,23,12) |
+      ((state & 0x000000f0) << 11) | bitnumIntl(state,28,17) | bitnumIntl(state,27,18) |
+      ((state & 0x0000000f) << 9) | bitnumIntl(state,0,23)
+    ) >>> 0;
+    const lrgstate = [
+      ((t1 >>> 24) & 0xff) ^ key[0],
+      ((t1 >>> 16) & 0xff) ^ key[1],
+      ((t1 >>> 8) & 0xff) ^ key[2],
+      ((t2 >>> 24) & 0xff) ^ key[3],
+      ((t2 >>> 16) & 0xff) ^ key[4],
+      ((t2 >>> 8) & 0xff) ^ key[5]
+    ];
+    let st = (
+      (sbox[0][sboxBit(lrgstate[0] >>> 2)] << 28) |
+      (sbox[1][sboxBit(((lrgstate[0] & 0x03) << 4) | (lrgstate[1] >>> 4))] << 24) |
+      (sbox[2][sboxBit(((lrgstate[1] & 0x0f) << 2) | (lrgstate[2] >>> 6))] << 20) |
+      (sbox[3][sboxBit(lrgstate[2] & 0x3f)] << 16) |
+      (sbox[4][sboxBit(lrgstate[3] >>> 2)] << 12) |
+      (sbox[5][sboxBit(((lrgstate[3] & 0x03) << 4) | (lrgstate[4] >>> 4))] << 8) |
+      (sbox[6][sboxBit(((lrgstate[4] & 0x0f) << 2) | (lrgstate[5] >>> 6))] << 4) |
+      sbox[7][sboxBit(lrgstate[5] & 0x3f)]
+    ) >>> 0;
+    return (
+      bitnumIntl(st,15,0)|bitnumIntl(st,6,1)|bitnumIntl(st,19,2)|bitnumIntl(st,20,3)|
+      bitnumIntl(st,28,4)|bitnumIntl(st,11,5)|bitnumIntl(st,27,6)|bitnumIntl(st,16,7)|
+      bitnumIntl(st,0,8)|bitnumIntl(st,14,9)|bitnumIntl(st,22,10)|bitnumIntl(st,25,11)|
+      bitnumIntl(st,4,12)|bitnumIntl(st,17,13)|bitnumIntl(st,30,14)|bitnumIntl(st,9,15)|
+      bitnumIntl(st,1,16)|bitnumIntl(st,7,17)|bitnumIntl(st,23,18)|bitnumIntl(st,13,19)|
+      bitnumIntl(st,31,20)|bitnumIntl(st,26,21)|bitnumIntl(st,2,22)|bitnumIntl(st,8,23)|
+      bitnumIntl(st,18,24)|bitnumIntl(st,12,25)|bitnumIntl(st,29,26)|bitnumIntl(st,5,27)|
+      bitnumIntl(st,21,28)|bitnumIntl(st,10,29)|bitnumIntl(st,3,30)|bitnumIntl(st,24,31)
+    ) >>> 0;
+  }
+
+  function crypt(inputData, key) {
+    let [s0, s1] = initialPermutation(inputData);
+    for (let idx = 0; idx < 15; idx++) {
+      const prev = s1;
+      s1 = (f(s1, key[idx]) ^ s0) >>> 0;
+      s0 = prev;
+    }
+    s0 = (f(s1, key[15]) ^ s0) >>> 0;
+    return inversePermutation(s0, s1);
+  }
+
+  function keySchedule(key, mode) {
+    const schedule = Array.from({ length: 16 }, () => [0, 0, 0, 0, 0, 0]);
+    const keyRndShift = [1,1,2,2,2,2,2,2,1,2,2,2,2,2,2,1];
+    const keyPermC = [56,48,40,32,24,16,8,0,57,49,41,33,25,17,9,1,58,50,42,34,26,18,10,2,59,51,43,35];
+    const keyPermD = [62,54,46,38,30,22,14,6,61,53,45,37,29,21,13,5,60,52,44,36,28,20,12,4,27,19,11,3];
+    const keyCompression = [13,16,10,23,0,4,2,27,14,5,20,9,22,18,11,3,25,7,15,6,26,19,12,1,40,51,30,36,46,54,29,39,50,44,32,47,43,48,38,55,33,52,45,41,49,35,28,31];
+    let c = 0, d = 0;
+    for (let i = 0; i < 28; i++) {
+      c |= bitnum(key, keyPermC[i], 31 - i);
+      d |= bitnum(key, keyPermD[i], 31 - i);
+    }
+    c >>>= 0; d >>>= 0;
+    for (let i = 0; i < 16; i++) {
+      c = (((c << keyRndShift[i]) | (c >>> (28 - keyRndShift[i]))) & 0xfffffff0) >>> 0;
+      d = (((d << keyRndShift[i]) | (d >>> (28 - keyRndShift[i]))) & 0xfffffff0) >>> 0;
+      const togen = mode === DECRYPT ? 15 - i : i;
+      schedule[togen][0] = schedule[togen][1] = schedule[togen][2] = 0;
+      schedule[togen][3] = schedule[togen][4] = schedule[togen][5] = 0;
+      for (let j = 0; j < 24; j++) {
+        schedule[togen][Math.floor(j / 8)] |= bitnumIntr(c, keyCompression[j], 7 - (j % 8));
+      }
+      for (let j = 24; j < 48; j++) {
+        schedule[togen][Math.floor(j / 8)] |= bitnumIntr(d, keyCompression[j] - 27, 7 - (j % 8));
+      }
+    }
+    return schedule;
+  }
+
+  function tripleDesKeySetup(key, mode) {
+    if (mode === ENCRYPT) {
+      return [keySchedule(key, ENCRYPT), keySchedule(key.slice(8), DECRYPT), keySchedule(key.slice(16), ENCRYPT)];
+    }
+    return [keySchedule(key.slice(16), DECRYPT), keySchedule(key.slice(8), ENCRYPT), keySchedule(key, DECRYPT)];
+  }
+
+  function tripleDesCrypt(data, key) {
+    let r = data;
+    for (let i = 0; i < 3; i++) r = crypt(r, key[i]);
+    return r;
+  }
+
+  return function tripleDesEcbDecrypt(key24, ciphertext) {
+    const keyArr = key24 instanceof Uint8Array ? key24 : new Uint8Array(Buffer.from(key24));
+    const ctArr = ciphertext instanceof Uint8Array ? ciphertext : new Uint8Array(Buffer.from(ciphertext));
+    if (keyArr.length !== 24) throw new Error('3DES key must be 24 bytes, got ' + keyArr.length);
+    if (ctArr.length === 0 || ctArr.length % 8 !== 0) {
+      throw new Error('3DES ciphertext length must be a positive multiple of 8, got ' + ctArr.length);
+    }
+    const sched = tripleDesKeySetup(keyArr, DECRYPT);
+    const out = Buffer.alloc(ctArr.length);
+    for (let i = 0; i < ctArr.length; i += 8) {
+      const block = ctArr.slice(i, i + 8);
+      const dec = tripleDesCrypt(block, sched);
+      Buffer.from(dec).copy(out, i);
+    }
+    return out;
+  };
+})();
+
+
 // ---------- lx.utils ----------
 const lxUtils = {
   buffer: {
@@ -252,6 +445,27 @@ const lxUtils = {
       const cipher = crypto.createCipheriv(mode, key, iv || null);
       return Buffer.concat([cipher.update(buffer), cipher.final()]);
     },
+    aesDecrypt: (buffer, mode, key, iv) => {
+      const decipher = crypto.createDecipheriv(mode, key, iv || null);
+      return Buffer.concat([decipher.update(buffer), decipher.final()]);
+    },
+    // 标准 3DES / DES 解密（OpenSSL）。QRC 等密文为 8 字节块整倍数、
+    // 自带零填充而非 PKCS7，关闭自动去填充避免 final() 抛错。
+    desDecrypt: (buffer, mode, key, iv) => {
+      const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+      const keyBuf = Buffer.isBuffer(key) ? key : Buffer.from(key);
+      const decipher = crypto.createDecipheriv(mode, keyBuf, iv || null);
+      decipher.setAutoPadding(false);
+      return Buffer.concat([decipher.update(buf), decipher.final()]);
+    },
+    // QQMusic QRC 专用 3DES-ECB 解密（LDDC 变体，**与标准 DES 不同**：
+    // 自带 S-box 偏差 + 32-bit 字内字节顺序反转）。和 OpenSSL 的
+    // 'des-ede3-ecb' 不兼容，必须走纯 JS 实现。
+    qrcDesDecrypt: (buffer, key) => {
+      const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+      const keyBuf = Buffer.isBuffer(key) ? key : Buffer.from(key);
+      return tripleDesEcbDecrypt(keyBuf, buf);
+    },
     rsaEncrypt: (buffer, publicKey) => {
       return crypto.publicEncrypt(
         { key: publicKey, padding: crypto.constants.RSA_PKCS1_PADDING },
@@ -260,9 +474,20 @@ const lxUtils = {
     }
   },
   zlib: {
+    // 标准 zlib（带 0x78 头）
     inflate: (buf) =>
       new Promise((resolve, reject) => {
         zlib.inflate(buf, (err, result) => (err ? reject(err) : resolve(result)));
+      }),
+    // raw deflate（无 zlib 头）：QQMusic 新版 QRC 即此格式
+    inflateRaw: (buf) =>
+      new Promise((resolve, reject) => {
+        zlib.inflateRaw(buf, (err, result) => (err ? reject(err) : resolve(result)));
+      }),
+    // gzip
+    gunzip: (buf) =>
+      new Promise((resolve, reject) => {
+        zlib.gunzip(buf, (err, result) => (err ? reject(err) : resolve(result)));
       }),
     deflate: (buf) =>
       new Promise((resolve, reject) => {

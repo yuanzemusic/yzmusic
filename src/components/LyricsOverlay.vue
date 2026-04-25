@@ -26,6 +26,51 @@ const {
   seekTo
 } = usePlayer();
 
+// audioEl 的 timeupdate 事件大约每 250ms 一次，对于逐字高亮太粗。
+// 在歌词面板打开期间用 rAF 拟合一条本地时间，得到 60fps 的平滑进度。
+const smoothTime = ref(0);
+let rafId = null;
+let syncedAt = 0; // performance.now() 时的 audio 时间
+let syncedWall = 0; // 上次同步的 wall clock
+
+function startRaf() {
+  if (rafId != null) return;
+  syncedAt = currentTime.value;
+  syncedWall = performance.now();
+  const tick = () => {
+    if (!showLyrics.value) {
+      rafId = null;
+      return;
+    }
+    smoothTime.value = isPlaying.value
+      ? syncedAt + (performance.now() - syncedWall) / 1000
+      : currentTime.value;
+    rafId = requestAnimationFrame(tick);
+  };
+  rafId = requestAnimationFrame(tick);
+}
+
+function stopRaf() {
+  if (rafId != null) cancelAnimationFrame(rafId);
+  rafId = null;
+}
+
+// audio 的 timeupdate 是真值，重新对齐 rAF 时基
+watch(currentTime, (t) => {
+  syncedAt = t;
+  syncedWall = performance.now();
+  if (!isPlaying.value) smoothTime.value = t;
+});
+
+// 计算激活行某 segment 的高亮进度 [0,1]
+function segProgress(line, seg) {
+  const elapsed = (smoothTime.value - line.time) * 1000;
+  if (elapsed <= seg.offset) return 0;
+  if (seg.duration <= 0) return 1;
+  if (elapsed >= seg.offset + seg.duration) return 1;
+  return (elapsed - seg.offset) / seg.duration;
+}
+
 const { isFav, toggleFav } = useFavorites();
 const router = useRouter();
 
@@ -54,16 +99,22 @@ watch([activeLyricIndex, lyricsLines], async () => {
 });
 
 watch(showLyrics, async (v) => {
-  if (!v) return;
-  await nextTick();
-  recenterActive();
+  if (v) {
+    startRaf();
+    await nextTick();
+    recenterActive();
+  } else {
+    stopRaf();
+  }
 });
 
 onMounted(() => {
   window.addEventListener('resize', recenterActive);
+  if (showLyrics.value) startRaf();
 });
 onUnmounted(() => {
   window.removeEventListener('resize', recenterActive);
+  stopRaf();
 });
 
 function onSeek(e) {
@@ -117,11 +168,26 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
               <div
                 v-for="(line, i) in lyricsLines"
                 :key="i"
-                :class="['lf-line', { active: i === activeLyricIndex }]"
+                :class="[
+                  'lf-line',
+                  {
+                    active: i === activeLyricIndex,
+                    'has-segs': i === activeLyricIndex && line.segments
+                  }
+                ]"
                 :data-index="i"
                 @click="seekTo(line.time)"
               >
-                {{ line.text || ' ' }}
+                <template v-if="i === activeLyricIndex && line.segments">
+                  <span
+                    v-for="(seg, j) in line.segments"
+                    :key="j"
+                    class="lf-seg"
+                    :style="{ '--lf-prog': segProgress(line, seg) }"
+                    >{{ seg.text }}</span
+                  >
+                </template>
+                <template v-else>{{ line.text || ' ' }}</template>
               </div>
             </div>
           </div>
@@ -350,6 +416,25 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
   font-size: 22px;
   font-weight: 700;
   transform: scale(1.02);
+}
+/* 逐字高亮：行容器降为暗色，单字 span 通过渐变背景 + 文字蒙版做局部填充 */
+.lf-line.active.has-segs {
+  color: rgba(255, 255, 255, 0.32);
+}
+.lf-seg {
+  display: inline-block;
+  white-space: pre;
+  background-image: linear-gradient(
+    90deg,
+    #fff 0%,
+    #fff calc(var(--lf-prog, 0) * 100%),
+    rgba(255, 255, 255, 0.32) calc(var(--lf-prog, 0) * 100%),
+    rgba(255, 255, 255, 0.32) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
 }
 .lf-empty {
   color: var(--text-3);
