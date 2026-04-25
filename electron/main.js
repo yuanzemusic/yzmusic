@@ -45,6 +45,7 @@ function createWindow() {
     minHeight: 640,
     backgroundColor: '#0d0d12',
     title: '远泽音乐播放器',
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -221,6 +222,8 @@ function createTray() {
 
 // 注册自定义协议，方便加载本地音频文件 (避免 file:// 中文/空格问题)
 app.whenReady().then(() => {
+  // Windows/Linux 下默认会带一栏 File/Edit/View 菜单，本应用不需要
+  Menu.setApplicationMenu(null);
   protocol.registerFileProtocol('localfile', (request, callback) => {
     try {
       const u = decodeURIComponent(request.url.replace('localfile://', ''));
