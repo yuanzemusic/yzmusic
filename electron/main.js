@@ -74,7 +74,8 @@ function createWindow() {
 }
 
 // ---------------- 托盘 ----------------
-// 生成一个 16x16 的白色音符 PNG（模板图标，macOS 菜单栏自动适配）
+// 生成 16x16 的应用 logo 像素化 PNG（模板图标，macOS 菜单栏自动适配深浅色）
+// 图案：左/右 两条对称 path（外角斜下接竖段）+ 中央独立 stem，三元素之间各空 1px —— 对应 logo 主体几何
 function buildTrayIconImage() {
   const size = 16;
   const crcTable = (() => {
@@ -105,16 +106,25 @@ function buildTrayIconImage() {
   ihdr.writeUInt32BE(size, 4);
   ihdr[8] = 8;
   ihdr[9] = 6; // RGBA 8-bit
+
+  // 左 path：上半斜段 (2,2)→(4,6) 后接竖段 (4..5, 6..12)，2px 粗
+  const onLeftPath = (x, y) => {
+    if (y === 2 || y === 3) return x === 2 || x === 3;
+    if (y === 4 || y === 5) return x === 3 || x === 4;
+    if (y >= 6 && y <= 12) return x === 4 || x === 5;
+    return false;
+  };
+  // 右 path：左 path 沿 x=7.5 镜像
+  const onRightPath = (x, y) => onLeftPath(15 - x, y);
+  // 中央独立 stem，2px × 5 行（短于左右 path，与 logo 比例一致）
+  const onStem = (x, y) => (x === 7 || x === 8) && y >= 6 && y <= 10;
+
   const rows = [];
   for (let y = 0; y < size; y++) {
     const row = Buffer.alloc(1 + size * 4);
     row[0] = 0; // 无滤波
     for (let x = 0; x < size; x++) {
-      // 简笔音符：符头 + 符干 + 旗
-      const head = (x - 5) * (x - 5) + (y - 11) * (y - 11) <= 6;
-      const stem = x === 9 && y >= 3 && y <= 11;
-      const flag = x >= 9 && x <= 12 && y - 3 + (x - 9) * 0.7 <= 2 && y >= 3;
-      const on = head || stem || flag;
+      const on = onLeftPath(x, y) || onRightPath(x, y) || onStem(x, y);
       const off = 1 + x * 4;
       row[off] = 255;
       row[off + 1] = 255;

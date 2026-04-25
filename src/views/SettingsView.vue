@@ -5,6 +5,7 @@ import { usePlayer } from '../composables/usePlayer';
 import { useDownloads } from '../composables/useDownloads';
 import { useCustomSources } from '../composables/useCustomSources';
 import { useRouter } from 'vue-router';
+import appIcon from '../assets/app-icon.svg';
 
 const router = useRouter();
 const { localFolder, localTracks, chooseLocalFolder, rescan } = useLocalMusic();
@@ -158,10 +159,13 @@ const {
 
       <section class="settings-section">
         <div class="settings-title">关于</div>
-        <div class="settings-desc">
-          远泽音乐播放器 (YZMusic) · Electron + Vue 3 (Vite)
-          <br />
-          开源项目，仅供学习与个人使用
+        <div class="about-row">
+          <img class="about-icon" :src="appIcon" alt="远泽音乐" />
+          <div class="settings-desc about-desc">
+            远泽音乐播放器 (YZMusic) · Electron + Vue 3 (Vite)
+            <br />
+            开源项目，仅供学习与个人使用
+          </div>
         </div>
       </section>
     </div>
@@ -192,6 +196,21 @@ const {
   color: var(--text-3);
   line-height: 1.6;
   margin-bottom: 16px;
+}
+.about-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.about-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  flex-shrink: 0;
+  box-shadow: 0 6px 20px rgba(58, 123, 213, 0.35);
+}
+.about-desc {
+  margin-bottom: 0;
 }
 .settings-desc code {
   background: var(--bg-3);
