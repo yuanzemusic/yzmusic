@@ -12,7 +12,10 @@ dist-electron/
 dist-ssr/
 out/
 release/
-build/
+build/*
+!build/icon.png
+!build/icon.icns
+!build/icon.ico
 *.local
 *.app
 *.exe
