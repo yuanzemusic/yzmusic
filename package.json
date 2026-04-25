@@ -1,0 +1,54 @@
+{
+  "name": "yzmusic",
+  "version": "1.0.0",
+  "description": "Electron + Vue 3 (Vite) 桌面音乐播放引擎：本地 + 自定义源脚本",
+  "main": "dist-electron/main.js",
+  "author": "yuanze",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && electron-builder",
+    "build:dir": "vite build && electron-builder --dir",
+    "build:mac": "vite build && electron-builder --mac",
+    "build:win": "vite build && electron-builder --win",
+    "build:linux": "vite build && electron-builder --linux",
+    "preview": "vite preview",
+    "format": "prettier --write \"src/**/*.{vue,js,json}\" \"electron/**/*.{js,json}\" \"*.{js,json,html}\"",
+    "format:check": "prettier --check \"src/**/*.{vue,js,json}\" \"electron/**/*.{js,json}\" \"*.{js,json,html}\""
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.4",
+    "electron": "^28.2.0",
+    "electron-builder": "^24.9.1",
+    "prettier": "^3.8.3",
+    "vite": "^5.1.5",
+    "vite-plugin-electron": "^0.28.4",
+    "vite-plugin-electron-renderer": "^0.14.5",
+    "vue": "^3.4.21",
+    "vue-router": "^4.3.0"
+  },
+  "dependencies": {
+    "music-metadata": "^7.14.0"
+  },
+  "build": {
+    "appId": "com.yuanze.yzmusic",
+    "productName": "YZMusic",
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.music"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}
