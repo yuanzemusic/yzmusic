@@ -1,6 +1,6 @@
 {
   "name": "yzmusic",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Electron + Vue 3 (Vite) 桌面音乐播放引擎：本地 + 自定义源脚本",
   "main": "dist-electron/main.js",
   "author": "yuanze",

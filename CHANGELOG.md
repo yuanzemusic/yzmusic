@@ -2,6 +2,32 @@
 
 本项目所有显著变更都会记录在此文件中。版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/) 规范。
 
+## [1.2.0] - 2026-04-25
+
+本次版本带来两条主线：一是应用品牌视觉补齐——新增图标资源并贯通 Dock / 任务栏、浏览器 favicon、侧边栏、托盘、设置关于区；二是歌词体验升级——支持酷我 lrcx 行内时间戳的逐字"水流"高亮。同时调整发布流程，CI 产出的 Release 改为草稿，由人工确认后再公开。
+
+### 新增
+
+- **逐字歌词高亮**：`parseLrc` 识别 `<offset,duration>` 行内时间戳并在每行产出 segments；`LyricsOverlay` 在激活行有 segments 时按段渲染 `<span>`，用 `linear-gradient + background-clip:text` 做整字渐进式填充的"水流过去"效果。面板打开期间用 `requestAnimationFrame` 拟合一条 60fps 本地时钟，每次 `timeupdate` 重对齐时基，避免 ~4Hz 原生事件粒度造成的卡顿与漂移；无行内标记的歌词保持原行级高亮，向后兼容。
+- **`fetchLyric` 携带歌曲上下文**：自定义源协议增强，`customSourceClient.fetchLyric` 现在把当前曲目元信息一并透传到主进程脚本，便于源端按 songId / 标题 / 艺术家精准取词（含酷我 lrcx 解码所需的额外字段）。
+- **应用图标资源**：新增 `build/icon.png` 与 `build/icon.icns`，作为 electron-builder 打包时的 Dock / 任务栏图标来源；同步新增矢量版 `src/assets/app-icon.svg` 供前端复用。
+- **侧边栏品牌 logo**：侧边栏顶部品牌区与浏览器 favicon 统一改用新的应用图标。
+- **托盘图标重画**：系统托盘图标按 logo 配色三段式重画，深浅模式下都更易识别。
+- **设置 → 关于**：关于区新增应用图标展示，与产品标题并排呈现。
+
+### 变更
+
+- **CI Release 流程**：tag 推送后 `softprops/action-gh-release` 创建的 Release 改为 `draft: true`，待产物核对完毕后由维护者手动发布，避免误推空 Release。
+
+### 产物
+
+| 平台 | 文件 |
+|------|------|
+| macOS (Apple Silicon) | `YZMusic-1.2.0-arm64.dmg` |
+| macOS (Intel) | `YZMusic-1.2.0.dmg` |
+| Windows | `YZMusic.Setup.1.2.0.exe` |
+| Linux | `YZMusic-1.2.0.AppImage` |
+
 ## [1.1.0] - 2026-04-25
 
 本次版本的代码功能与 1.0.0 保持一致，主要补齐了发布与分发链路：从此版本起在 GitHub Actions 上自动构建 macOS / Windows / Linux 三平台安装包，并随 tag 一起发布到 Releases。
@@ -43,5 +69,6 @@
 - **LRC 歌词**：解析与同步高亮，底栏点击展开全屏歌词。
 - **数据持久化**：收藏、本地音乐路径、下载目录、音量、播放模式、已安装源全部存放在 Electron `userData` 目录下的 `player-store.json`。
 
+[1.2.0]: https://github.com/yuanzemusic/yzmusic/releases/tag/v1.2.0
 [1.1.0]: https://github.com/yuanzemusic/yzmusic/releases/tag/v1.1.0
 [1.0.0]: https://github.com/yuanzemusic/yzmusic/releases/tag/v1.0.0
