@@ -68,7 +68,7 @@ jobs:
             release/*.zip
             release/*.exe
             release/*.AppImage
-          draft: false
+          draft: true
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
