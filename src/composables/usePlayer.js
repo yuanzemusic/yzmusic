@@ -180,7 +180,7 @@ async function playTrack(track, list) {
 
   // 歌词通过自定义源 dispatch（脚本内部按 source 选择实现）
   if (track.type === 'online' && track.songId && track.source) {
-    const lyrics = await fetchLyric(track.source, track.songId);
+    const lyrics = await fetchLyric(track.source, track.songId, track[track.source] || null);
     if (token !== playToken) return;
     lyricsLines.value = lyrics;
   }

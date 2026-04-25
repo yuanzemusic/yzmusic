@@ -64,13 +64,18 @@ export async function searchMusic(sourceKey, { keyWord, page = 1, limit = 30 }) 
 
 // ---------- 歌词 ----------
 // 脚本可返回 string 或 { lyric: string, tlyric?: string }；统一交给 parseLrc。
+// extra 透传 track 上对应源的子对象（如 track.tx），用于脚本拿到 innerSongId 等
+// 在主键 songId 之外的辅助字段。track 多半来自 reactive ref（playQueue/
+// currentTrack），其嵌套对象是 Proxy，Electron 结构化克隆会抛
+// "An object could not be cloned"——所以这里走一次 JSON round-trip。
 // 任何错误都吞成空数组，呼叫方 (usePlayer) 不希望因歌词失败影响播放。
-export async function fetchLyric(sourceKey, songId) {
+export async function fetchLyric(sourceKey, songId, extra) {
   try {
+    const safeExtra = extra ? JSON.parse(JSON.stringify(extra)) : null;
     const raw = await dispatch({
       sourceKey,
       action: 'lyric',
-      info: { songId }
+      info: { songId, extra: safeExtra }
     });
     const text = typeof raw === 'string' ? raw : raw && typeof raw.lyric === 'string' ? raw.lyric : '';
     return parseLrc(text);
