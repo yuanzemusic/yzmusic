@@ -20,6 +20,7 @@ const {
   importFromFile: customImportFile,
   importFromUrl: customImportUrl,
   removeSource: customRemove,
+  reloadSource: customReload,
   toggleEnabled: customToggle,
   formatSourceKeys: customKeys
 } = useCustomSources();
@@ -125,7 +126,15 @@ const {
                   <input type="checkbox" :checked="s.enabled" @change="customToggle(s)" />
                   <span class="switch-slider"></span>
                 </label>
-                <button class="btn ghost small" @click="customRemove(s.id)">删除</button>
+                <button
+                  class="btn ghost small"
+                  :title="`重新加载（来源：${s.origin || 'local'}）`"
+                  :disabled="customBusy"
+                  @click="customReload(s)"
+                >
+                  重载
+                </button>
+                <button class="btn ghost small" @click="customRemove(s.id)" :disabled="customBusy">删除</button>
               </div>
             </li>
           </ul>

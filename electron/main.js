@@ -405,6 +405,16 @@ ipcMain.handle('customSource:remove', (_e, id) => {
   return customSourceManager.remove(id);
 });
 
+ipcMain.handle('customSource:reload', async (_e, id) => {
+  if (!id || typeof id !== 'string') return { ok: false, error: '缺少 id' };
+  try {
+    const r = await customSourceManager.reload(id);
+    return { ok: true, entry: r.entry, source: r.source };
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) };
+  }
+});
+
 ipcMain.handle('customSource:setEnabled', (_e, id, enabled) => {
   return customSourceManager.setEnabled(id, enabled);
 });
