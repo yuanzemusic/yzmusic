@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { usePlayer } from '../composables/usePlayer';
 import { useCustomSources } from '../composables/useCustomSources';
+import appIcon from '../assets/app-icon.svg';
 
 defineProps({
   navItems: { type: Array, required: true }
@@ -42,7 +43,7 @@ const statusText = computed(() => {
 <template>
   <aside class="sidebar">
     <div class="brand">
-      <div class="brand-logo">♪</div>
+      <img class="brand-logo" :src="appIcon" alt="远泽音乐" />
       <div class="brand-name">远泽音乐</div>
     </div>
 
@@ -91,12 +92,8 @@ const statusText = computed(() => {
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--primary), var(--primary-2));
-  display: grid;
-  place-items: center;
-  font-size: 20px;
-  color: white;
-  box-shadow: 0 6px 20px rgba(123, 92, 255, 0.4);
+  display: block;
+  box-shadow: 0 6px 20px rgba(58, 123, 213, 0.4);
 }
 .brand-name {
   font-size: 16px;
